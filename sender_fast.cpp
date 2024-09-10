@@ -4,52 +4,52 @@
 #include <openssl/sha.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <array>
 
-#define MAX_DATA_SIZE 127 // Максимальный размер данных ячейки в байтах (1023 бита)
+#define MAX_DATA_SIZE 127 // Максимальный размер данных в байтах (1023 бита / 8)
 #define MAX_REFS 4
 
 struct Cell {
-    uint8_t data[MAX_DATA_SIZE]; // Данные ячейки
-    size_t data_size; // Размер данных в байтах
-    Cell* refs[MAX_REFS]; // Ссылки на дочерние ячейки
+    std::array<uint8_t, MAX_DATA_SIZE> data; // Данные ячейки
+    size_t data_size; // Размер данных
+    std::array<Cell*, MAX_REFS> refs; // Ссылки на дочерние ячейки
     uint8_t refs_count; // Количество ссылок
 
     Cell() : data_size(0), refs_count(0) {
-        memset(data, 0, sizeof(data));
-        memset(refs, 0, sizeof(refs));
+        data.fill(0);
+        refs.fill(nullptr);
     }
 };
 
-// Сериализация ячейки и ее поддерева
-size_t serializeCell(Cell* cell, uint8_t* buffer, size_t offset) {
+// Сериализация ячейки и её поддерева
+size_t serializeCell(const Cell* cell, uint8_t* buffer, size_t offset) {
     buffer[offset++] = static_cast<uint8_t>(cell->data_size); // Размер данных
-    memcpy(buffer + offset, cell->data, cell->data_size); // Сами данные
+    std::memcpy(buffer + offset, cell->data.data(), cell->data_size); // Сериализация данных
     offset += cell->data_size;
     buffer[offset++] = cell->refs_count; // Количество ссылок
 
-    for (uint8_t i = 0; i < cell->refs_count; i++) {
-        offset = serializeCell(cell->refs[i], buffer, offset); // Рекурсивная сериализация ссылок
+    for (uint8_t i = 0; i < cell->refs_count; ++i) {
+        offset = serializeCell(cell->refs[i], buffer, offset); // Рекурсивная сериализация
     }
-
     return offset;
 }
 
-// Функция для чтения входных данных и создания дерева ячеек
+// Чтение входных данных и создание дерева ячеек
 Cell* readAndBuildCellTree(const char* filename) {
-    std::ifstream infile(filename);
+    std::ifstream infile(filename, std::ios::binary);
     if (!infile) {
         std::cerr << "Не удалось открыть файл." << std::endl;
         return nullptr;
     }
 
-    Cell* root = new Cell();
+    auto* root = new Cell();
     size_t count = 0;
     infile >> count; // Чтение количества ячеек
 
-    for (size_t i = 0; i < count; i++) {
-        Cell* child = new Cell();
+    for (size_t i = 0; i < count; ++i) {
+        auto* child = new Cell();
         infile >> child->data_size; // Чтение размера данных
-        infile.read(reinterpret_cast<char*>(child->data), child->data_size); // Чтение самих данных
+        infile.read(reinterpret_cast<char*>(child->data.data()), child->data_size); // Чтение данных
         root->refs[root->refs_count++] = child; // Добавление дочерней ячейки
     }
 
@@ -72,7 +72,7 @@ int main() {
 
     if (!root) return -1;
 
-    uint8_t buffer[1024];
+    uint8_t buffer[2048]; // Увеличен размер буфера для данных и хэша
     size_t serialized_len = serializeCell(root, buffer, 0);
 
     uint8_t hash[SHA256_DIGEST_LENGTH];

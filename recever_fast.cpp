@@ -3,30 +3,31 @@
 #include <openssl/sha.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <array>
 
 #define MAX_DATA_SIZE 127
 #define MAX_REFS 4
 
 struct Cell {
-    uint8_t data[MAX_DATA_SIZE];
+    std::array<uint8_t, MAX_DATA_SIZE> data;
     size_t data_size;
-    Cell* refs[MAX_REFS];
+    std::array<Cell*, MAX_REFS> refs;
     uint8_t refs_count;
 
     Cell() : data_size(0), refs_count(0) {
-        memset(data, 0, sizeof(data));
-        memset(refs, 0, sizeof(refs));
+        data.fill(0);
+        refs.fill(nullptr);
     }
 };
 
-// Десериализация ячейки и ее поддерева
+// Десериализация ячейки и её поддерева
 size_t deserializeCell(uint8_t* buffer, size_t offset, Cell* cell) {
     cell->data_size = buffer[offset++];
-    memcpy(cell->data, buffer + offset, cell->data_size);
+    std::memcpy(cell->data.data(), buffer + offset, cell->data_size);
     offset += cell->data_size;
     cell->refs_count = buffer[offset++];
 
-    for (uint8_t i = 0; i < cell->refs_count; i++) {
+    for (uint8_t i = 0; i < cell->refs_count; ++i) {
         cell->refs[i] = new Cell();
         offset = deserializeCell(buffer, offset, cell->refs[i]);
     }
@@ -71,11 +72,11 @@ int main() {
         return -1;
     }
 
-    uint8_t buffer[1024], received_hash[SHA256_DIGEST_LENGTH];
+    uint8_t buffer[2048], received_hash[SHA256_DIGEST_LENGTH];
     size_t received_len = recv(client_socket, buffer, sizeof(buffer), 0);
     recv(client_socket, received_hash, SHA256_DIGEST_LENGTH, 0);
 
-    Cell* root = new Cell();
+    auto* root = new Cell();
     deserializeCell(buffer, 0, root);
 
     uint8_t calculated_hash[SHA256_DIGEST_LENGTH];
